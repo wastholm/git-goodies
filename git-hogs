@@ -1,0 +1,74 @@
+#!/bin/sh -e
+
+# == Functions ==
+
+usage() {
+    cat <<EOT
+Usage: $0 OPTIONS
+
+Find the files hogging the most disk space in a Git repo.
+
+Options:
+  -h, --help                Output this help and exit immediately.
+  -l, --long                Use long output format (hash, size, repo_path).
+  -n NUM, --num=NUM         Number of hogs to find.
+  -v, --verbose             Be verbose.
+EOT
+}
+
+# == Main Program ==
+
+# Defaults.
+long_format=
+num_lines=10
+verbose=
+
+# Parse command-line arguments.
+opts=$(getopt -n "$0" -l help,long,num:,verbose -o hln:v -- "$@")
+eval set -- "$opts"
+while true; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -l|--long)
+            long_format=1; shift; continue
+            ;;
+        -n|--num)
+            num_lines=$2; shift 2; continue
+            ;;
+        -v|--verbose)
+            verbose=1; shift; continue
+            ;;
+        --)
+            break
+            ;;
+    esac
+done
+eval set "$@"
+
+[ -n "$verbose" ] && echo "$0: starting up: $(date)"
+
+git_dir=$(git rev-parse --git-dir)
+
+temp_dir=$(mktemp -d /tmp/git-hogs-XXXXXXXX)
+trap "rm -fr '$temp_dir'" 0 1 2 3 15
+
+git verify-pack -v "$git_dir"/objects/pack/pack-*.idx | \
+    grep -E '^[0-9a-f]{40}\s+blob' | \
+    sort -k3nr | \
+    head -n "$num_lines" \
+    >"$temp_dir/packs"
+while read line; do
+    hash=$(echo "$line" | cut -d' ' -f1)
+    repo_path=$(git rev-list --all --objects | grep "$hash" | cut -d' ' -f2-)
+    if [ -n "$long_format" ]; then
+        size=$(echo "$line" | cut -d' ' -f5)
+        printf '%s %12d %s\n' "$hash" "$size" "$repo_path"
+    else
+        echo "$repo_path"
+    fi
+done <"$temp_dir/packs"
+
+[ -n "$verbose" ] && echo "$0: all done: $(date)" || true

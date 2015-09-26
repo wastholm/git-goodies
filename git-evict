@@ -1,0 +1,118 @@
+#!/bin/sh -e
+
+# == Functions ==
+
+usage() {
+    cat <<EOT
+Usage: $0 [OPTIONS] PATH...
+
+Evict files from a Git repo. Afterwards, the repo will look as though the
+files were never there to begin with. This will of course rewrite Git's
+history so be careful about pushes, pulls and merges.
+
+Options:
+  -h, --help                Output this help and exit immediately.
+  -e PATH, --evict-to=PATH  Copy files to PATH and before evicting them.
+  -f, --force               Evict files even if they are found in HEAD.
+  -v, --verbose             Be verbose.
+EOT
+}
+
+# == Main Program ==
+
+# Defaults.
+evict_path=
+force=
+verbose=
+
+# Parse command-line arguments.
+opts=$(getopt -n "$0" -l help,evict-to:,force,verbose -o he:fv -- "$@")
+eval set -- "$opts"
+while true; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -e|--evict-to)
+            evict_path=$2; shift 2; continue
+            ;;
+        -f|--force)
+            force=1; shift; continue
+            ;;
+        -v|--verbose)
+            verbose=1; shift; continue
+            ;;
+        --)
+            break
+            ;;
+    esac
+done
+eval set "$@"
+
+[ -n "$verbose" ] && echo "$0: starting up: $(date)"
+
+temp_dir=$(mktemp -d /tmp/git-evict-XXXXXXXX)
+temp_script="$temp_dir/filter-branch"
+touch "$temp_script"
+chmod +x "$temp_script"
+trap "rm -fr '$temp_dir'" 0 1 2 3 15
+
+num_to_evict=0
+for path in $@; do
+    if [ -z "$force" ]; then
+        if [ -e "$path" ]; then
+            echo >&2 "$0: warning: path exists in HEAD, skipping: $path"
+            continue
+        fi
+    fi
+    [ -n "$verbose" ] && echo "$0: adding evictee: $path"
+    echo >>"$temp_script" "git rm --cached --ignore-unmatch '$path'"
+    if [ -z "$evict_path" ]; then
+        num_to_evict=$(expr "$num_to_evict" + 1)
+    else
+        target_path="$evict_path/$path"
+        [ -n "$verbose" ] && echo "$0: copying to: $target_path"
+        if [ -e "$target_path" ]; then
+            echo >&2 "$0: warning: file already exists: $target_path"
+        fi
+        mkdir --parents $(dirname "$target_path")
+        git log \
+            --all \
+            --follow \
+            --no-abbrev \
+            --oneline \
+            -- \
+            "$path" | \
+            cut -d' ' -f1 \
+            >"$temp_dir/hashes"
+        while read commit_hash; do
+            if git show "$commit_hash:$path" >"$target_path" 2>/dev/null; then
+                found_commit_hash=$commit_hash
+                [ -n "$verbose" ] && echo "$0: last commit with this file: $found_commit_hash"
+                echo >>"$temp_script" "git rm --cached --ignore-unmatch '$path'"
+                num_to_evict=$(expr "$num_to_evict" + 1)
+                break
+            fi
+        done <"$temp_dir/hashes"
+        if [ -z "$found_commit_hash" ]; then
+            echo >&2 "$0: error: couldn't find file: $path"
+            exit 2
+        fi
+    fi
+done
+
+[ -n "$verbose" ] && echo "$0: number of files to evict: $num_to_evict"
+if [ "$num_to_evict" -gt 0 ]; then
+    cd $(git rev-parse --show-toplevel)
+    git filter-branch --index-filter "$temp_script" \
+        --tag-name-filter cat -f -- --all
+    [ -n "$verbose" ] && echo "$0: purging backed up refs"
+    git for-each-ref --format="%(refname)" refs/original/ | xargs -I% -n 1 git update-ref -d %
+    [ -n "$verbose" ] && echo "$0: running reflog expire"
+    git reflog expire --expire=now --all
+    [ -n "$verbose" ] && echo "$0: running garbage collection"
+    git gc --prune=now --aggressive
+fi
+
+[ -n "$verbose" ] && echo "$0: all done: $(date)" || true
