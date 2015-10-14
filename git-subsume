@@ -1,0 +1,53 @@
+#!/bin/sh -e
+
+repo=$1
+subdir=$2
+
+if [ -z "$repo" -o -z "$subdir" ]; then
+    cat <<EOT
+Usage: $0 REPO SUBDIR
+
+Subsume another Git repo as a subdirectory of the current one.
+EOT
+    exit 1
+fi
+
+temp_dir=$(mktemp -d /tmp/git-subsume-XXXXXXXX)
+trap 'rm -fr "$temp_dir"' 0 1 2 3 15
+
+echo "$0: cloning: $repo"
+git clone "$repo" "$temp_dir"
+cd "$temp_dir"
+
+echo "$0: detaching submodules"
+find . -name .gitmodules -exec git rm {} \;
+if [ -n "$(git status --porcelain)" ]; then
+    git add -A
+    git commit -m "Detached submodules."
+fi
+
+echo "$0: moving into subdirectory: $subdir"
+git filter-branch --index-filter \
+    "
+        git ls-files -s |
+            sed 's!\t\"*!&$subdir/!' |
+                GIT_INDEX_FILE=\$GIT_INDEX_FILE.new git update-index --index-info &&
+                (mv \"\$GIT_INDEX_FILE.new\" \"\$GIT_INDEX_FILE\" || echo >&2 \"\$0: warning: not found: \$GIT_INDEX_FILE\")
+    " \
+    --tag-name-filter cat -f -- --all
+
+cd -
+
+if [ -d "$subdir" ]; then
+    echo "$0: deleting directory: $subdir"
+    git rm "$subdir"
+    git add -A
+    git commit -m "Deleted '$subdir'."
+fi
+
+echo "$0: fetching: $temp_dir"
+git fetch "$temp_dir" master:newbranch
+
+echo "$0: merging"
+git merge newbranch -m "Subsumed '$subdir' (from $repo)."
+git branch -d newbranch
