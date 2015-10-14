@@ -19,13 +19,6 @@ echo "$0: cloning: $repo"
 git clone "$repo" "$temp_dir"
 cd "$temp_dir"
 
-echo "$0: detaching submodules"
-find . -name .gitmodules -exec git rm {} \;
-if [ -n "$(git status --porcelain)" ]; then
-    git add -A
-    git commit -m "Detached submodules."
-fi
-
 echo "$0: moving into subdirectory: $subdir"
 git filter-branch --index-filter \
     "

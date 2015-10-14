@@ -132,3 +132,28 @@ $ ls /tmp/src/qt/res/icons/bitcoin.png
 ### Bugs
 
 `git-evict` operates on paths, so if a file has been moved or renamed, only the occurrences back to the move will be evicted; revisions prior to that will remain untouched. Workaround: Evict both the new and the old path.
+
+
+## git-subsume
+
+Absorb an unrelated Git repository and make it look as though it was always a subdirectory of the current one.
+
+
+### Description
+
+Combines two unrelated Git repositories so that one becomes a subdirectory inside the other. The script rewrites the history of the incoming repo to make it look like it always resided inside the receiving repo.
+
+
+### Example Usage
+
+Suppose we have two repos, called `main` and `side-project`. We have some nontrivial amount of work done in both and now we decide that `side-project` really should be a subdirectory of `main` rather than its own separate repo.
+
+```
+$ cd ~/main
+$ git-subsume git@example.com:side-project.git some/path/side-project
+```
+
+
+### Bugs
+
+Probably.
