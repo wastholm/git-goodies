@@ -2,6 +2,7 @@
 
 repo=$1
 subdir=$2
+prefix=$(basename "$subdir")
 
 if [ -z "$repo" -o -z "$subdir" ]; then
     cat <<EOT
@@ -29,6 +30,13 @@ git filter-branch --index-filter \
     " \
     --tag-name-filter cat -f -- --all
 
+git tag | while read tag_name; do
+    tag_hash=$(git rev-parse "${tag_name}^0")
+    echo "$0: tag: $tag_hash $tag_name"
+    git tag -a -m "Was '$tag_name'." "$prefix-$tag_name" "$tag_hash"
+    git tag -d "$tag_name"
+done
+
 cd -
 
 if [ -d "$subdir" ]; then
@@ -40,6 +48,7 @@ fi
 
 echo "$0: fetching: $temp_dir"
 git fetch "$temp_dir" master:newbranch
+git fetch "$temp_dir" --tags
 
 echo "$0: merging"
 git merge newbranch -m "Subsumed '$subdir' (from $repo)."
