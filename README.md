@@ -22,12 +22,9 @@ Finds the largest files in a Git repo, regardless of path, and including files n
 
 ### Options
 
-`-l`, `--long`
-:   Use long output format (hash, size, repo_path).
-`-n NUM`, `--num=NUM`
-:   Number of hogs to find.
-`-v`, `--verbose`
-:   Be verbose.
+* `-l`, `--long`: Use long output format (hash, size, repo_path).
+* `-n NUM`, `--num=NUM`: Number of hogs to find.
+* `-v`, `--verbose`: Be verbose.
 
 
 ### Example Usage
